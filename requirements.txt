@@ -1,0 +1,2 @@
+# Biblioteca principal para interagir com o YouTube
+pytube
