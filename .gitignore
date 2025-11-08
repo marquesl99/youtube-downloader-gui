@@ -1,0 +1,23 @@
+# Ambiente Virtual (ignora a pasta .venv que criaremos)
+.venv/
+venv/
+*.venv/
+
+# Caches do Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Configurações de IDEs (ex: Vscode)
+.vscode/
+.idea/
+
+# Arquivos de Build e Distribuição
+build/
+dist/
+*.egg-info/
+
+# Logs e arquivos temporários
+*.log
+*.tmp
