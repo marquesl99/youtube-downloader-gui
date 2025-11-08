@@ -124,6 +124,4 @@ Se precisar de ajuda ou quiser reportar algo específico, abra uma issue neste r
 
 ---
 
-Arquivo adicionado automaticamente: `README.md` — descrição, instalação e instruções de uso para Windows/PowerShell.
-# youtube-downloader-gui
-Script em Python para baixar videos do Youtube 
+
