@@ -1,27 +1,26 @@
 """
 =====================================================
-Baixador de Vídeos Pessoal - Lógica de Download (v2.0)
+Baixador de Vídeos Pessoal - Lógica de Download (v2.1)
 =====================================================
 
 Autor: Mark Musk - Dev Python
-Data: 08/11/2025
-Versão: 2.0 (Refatorado)
+Data: 09/11/2025
+Versão: 2.1 (Refatorado)
 
 Descrição:
-Este módulo contém a classe VideoDownloader, agora refatorada
-para usar a biblioteca 'yt-dlp' em vez do 'pytube'.
-'yt-dlp' é mais robusta contra atualizações de API do YouTube
-e gerencia nativamente o merge de áudio e vídeo (FR-003).
+Este módulo contém a classe VideoDownloader (yt-dlp).
+Atualizado para aceitar um parâmetro de formato (mp4 ou mp3)
+e ajustar as opções de download e pós-processamento do yt-dlp
+de acordo.
 
 Dependências:
-- yt-dlp (instalado via requirements.txt)
-- FFmpeg (Requisito NFR-004): 'yt-dlp' depende dele para
-  fazer o merge de streams de alta qualidade.
+- yt-dlp
+- FFmpeg (essencial para o merge de mp4 e extração de mp3)
 """
 
 # Importações de módulos
-import yt_dlp  # A nova biblioteca de download
-from typing import Callable # Para tipagem dos callbacks
+import yt_dlp
+from typing import Callable
 
 class VideoDownloader:
     """
@@ -35,117 +34,113 @@ class VideoDownloader:
                  callback_error: Callable[[str], None],
                  callback_complete: Callable[[str], None]):
         """
-        Inicializa o downloader.
-
-        Args:
-            callback_status (Callable): Função chamada para atualizar 
-                                        mensagens de status.
-            callback_progress (Callable): Função chamada para atualizar 
-                                          a barra de progresso (0-100).
-            callback_error (Callable): Função chamada quando um erro ocorre.
-            callback_complete (Callable): Função chamada ao concluir com sucesso.
+        Inicializa o downloader. (Sem alterações)
         """
-        # --- Callbacks ---
-        # Estes são os mesmos métodos "seguros" da AppGUI
         self.update_status = callback_status
         self.update_progress = callback_progress
         self.notify_error = callback_error
         self.notify_complete = callback_complete
 
-        # Variável para armazenar o caminho final
         self.caminho_final = ""
 
     def _yt_dlp_hook(self, d: dict):
         """
-        Hook (callback) chamado pelo yt-dlp durante o processo.
-        
-        Este método recebe um dicionário 'd' com o status
-        atual do download e pós-processamento.
-
-        Args:
-            d (dict): Dicionário de status do yt-dlp.
+        Hook (callback) chamado pelo yt-dlp. (Sem alterações)
         """
         
-        # --- Feedback de Status (FR-005) ---
         if d['status'] == 'downloading':
-            # Captura a porcentagem do download
-            # O yt-dlp formata a string, ex: " 10.5%"
             if '_percent_str' in d:
                 percent_str = d['_percent_str'].strip().replace('%', '')
                 try:
-                    # Usamos 90% da barra para o download, 10% para o merge
+                    # Se for MP3, o "download" é tudo (não há merge)
+                    # Se for MP4, 90% é download, 10% é merge
+                    # (Vamos simplificar e deixar 90% para download em ambos)
                     percent = float(percent_str) * 0.9
                     self.update_progress(int(percent))
                 except ValueError:
-                    pass # Ignora se a string não for um número
+                    pass
         
-        # --- Pós-processamento (Merge FFmpeg) ---
         elif d['status'] == 'postprocessing':
-            # Quando o FFmpeg é chamado para o merge
-            self.update_status("Juntando áudio e vídeo com FFmpeg...")
-            # Avança a barra para 95% para indicar o merge
+            # Isso agora captura tanto o merge (MP4) quanto a extração (MP3)
+            self.update_status("Pós-processando (FFmpeg)...")
             self.update_progress(95)
             
-        # --- Conclusão ---
         elif d['status'] == 'finished':
             self.update_progress(100)
-            # O 'filename' em 'd' pode não ser o caminho final exato
-            # que definimos, então usamos o que salvamos.
             self.notify_complete(f"Download Concluído!\nSalvo em: {self.caminho_final}")
         
-        # --- Erros ---
         elif d['status'] == 'error':
             self.notify_error(f"Erro durante o download: {d.get('filename', 'N/A')}")
 
 
-    def iniciar_download(self, url: str, caminho_final: str):
+    def iniciar_download(self, url: str, caminho_final: str, formato_escolhido: str):
         """
+        (MODIFICADO)
         Ponto de entrada principal para iniciar o processo de download.
-        
-        Este método executa em uma thread separada (gerenciada pela GUI).
+        Agora aceita 'formato_escolhido' para definir as opções.
 
         Args:
             url (str): A URL do vídeo do YouTube.
             caminho_final (str): O caminho completo onde o arquivo
                                  final deve ser salvo.
+            formato_escolhido (str): "mp4" ou "mp3".
         """
         try:
             self.update_status("Iniciando yt-dlp...")
             self.update_progress(0)
             self.caminho_final = caminho_final
 
-            # --- Configuração das Opções do yt-dlp ---
-            
-            # FR-003: "bestvideo..." seleciona o melhor vídeo MP4
-            #         "+bestaudio..." seleciona o melhor áudio M4A
-            #         "/best[ext=mp4]" fallback se não houver streams separados
-            #         "/best" fallback final
-            # Isso exige que o FFmpeg esteja no PATH (NFR-004)
+            # --- (MODIFICADO) Configuração dinâmica das Opções do yt-dlp ---
             
             ydl_opts = {
-                'format': 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
-                'outtmpl': caminho_final,  # (FR-002) Onde salvar o arquivo
-                'progress_hooks': [self._yt_dlp_hook], # (FR-004) Callback de progresso
-                'postprocessor_hooks': [self._yt_dlp_hook], # Captura o 'finished'
-                'noprogress': True, # Desliga o logger de progresso padrão
-                'quiet': True, # Suprime a saída padrão
-                'warning': self.update_status, # Redireciona warnings
-                'noplaylist': True, # (Ref: Fora do Escopo) Garante 1 vídeo
+                'outtmpl': caminho_final,
+                'progress_hooks': [self._yt_dlp_hook],
+                'postprocessor_hooks': [self._yt_dlp_hook],
+                'noprogress': True,
+                'quiet': True,
+                'warning': self.update_status,
+                'noplaylist': True,
             }
+
+            if formato_escolhido == "mp3":
+                # --- Opções para MP3 (Extração de Áudio) ---
+                self.update_status("Configurando para extração de áudio (MP3)...")
+                
+                # 1. Pede o melhor áudio disponível
+                ydl_opts['format'] = 'bestaudio/best'
+                
+                # 2. Define o pós-processador para extrair e converter
+                ydl_opts['postprocessors'] = [{
+                    'key': 'FFmpegExtractAudio', # Usa FFmpeg
+                    'preferredcodec': 'mp3',       # Converte para MP3
+                    'preferredquality': '192',     # Qualidade (192k é um bom padrão)
+                }]
+                
+                # O 'outtmpl' já está correto (ex: 'video.mp3'),
+                # o yt-dlp gerencia a troca de extensão.
+
+            else: # O padrão é MP4
+                # --- Opções para MP4 (Vídeo + Áudio) ---
+                self.update_status("Configurando para download de vídeo (MP4)...")
+                
+                # (FR-003) Pede o melhor vídeo e áudio MP4 e os junta
+                ydl_opts['format'] = ('bestvideo[ext=mp4]+bestaudio[ext=m4a]/'
+                                      'best[ext=mp4]/best')
+                
+                # O 'outtmpl' (ex: 'video.mp4') e o FFmpeg
+                # farão o merge automaticamente.
+
+            # --- Fim da Configuração ---
 
             self.update_status("Validando URL e buscando streams...")
             
-            # Instancia e executa o download
-            # yt_dlp.YoutubeDL é o objeto principal
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                ydl.download([url]) # Inicia o download
+                ydl.download([url])
 
         except yt_dlp.utils.DownloadError as e:
-            # Erro específico do yt-dlp (ex: URL inválida, vídeo indisponível)
             self.update_status(f"Erro do yt-dlp: {e}")
             self.notify_error(f"Falha no Download:\n{e}")
             
         except Exception as e:
-            # Erro geral (ex: permissão de escrita no disco)
             self.update_status(f"Erro inesperado: {e}")
             self.notify_error(f"Falha inesperada:\n{e}")
